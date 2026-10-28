@@ -1,0 +1,9 @@
+src/**
+test/**
+dist-test/**
+node_modules/**
+**/*.map
+tsconfig.json
+.gitignore
+images/*.svg
+.github/**

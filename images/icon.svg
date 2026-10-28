@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#16406B"/>
+      <stop offset="1" stop-color="#0A1F36"/>
+    </linearGradient>
+    <linearGradient id="arrow" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#F59E0B"/>
+      <stop offset="1" stop-color="#FCD34D"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="56" fill="url(#bg)"/>
+  <!-- server bay -->
+  <rect x="46" y="128" width="164" height="38" rx="10" fill="none" stroke="#E6F0FA" stroke-width="10"/>
+  <rect x="46" y="178" width="164" height="38" rx="10" fill="none" stroke="#E6F0FA" stroke-width="10"/>
+  <circle cx="72" cy="147" r="7" fill="#5EEAD4"/>
+  <circle cx="72" cy="197" r="7" fill="#5EEAD4"/>
+  <rect x="148" y="143" width="40" height="8" rx="4" fill="#E6F0FA" opacity=".55"/>
+  <rect x="148" y="193" width="40" height="8" rx="4" fill="#E6F0FA" opacity=".55"/>
+  <!-- deploy arrow -->
+  <path d="M128 36 L170 80 H144 V110 H112 V80 H86 Z" fill="url(#arrow)"/>
+</svg>

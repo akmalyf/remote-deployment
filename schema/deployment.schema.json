@@ -1,0 +1,246 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Deployment configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "defaultServer": {
+      "type": "string",
+      "description": "Server or group used by Upload/Download to default server and automatic upload."
+    },
+    "servers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "sftp",
+              "ftp",
+              "ftps",
+              "local",
+              "webdav"
+            ],
+            "default": "sftp"
+          },
+          "host": {
+            "type": "string",
+            "description": "Host name (SFTP with auth openSsh: ~/.ssh/config alias; WebDAV: may be a full URL)."
+          },
+          "port": {
+            "type": "integer"
+          },
+          "user": {
+            "type": "string"
+          },
+          "auth": {
+            "enum": [
+              "password",
+              "key",
+              "agent",
+              "openSsh"
+            ],
+            "default": "password"
+          },
+          "keyPath": {
+            "type": "string"
+          },
+          "rootPath": {
+            "type": "string",
+            "description": "Root folder on the server (local: target folder)."
+          },
+          "webUrl": {
+            "type": "string"
+          },
+          "passive": {
+            "type": "boolean",
+            "default": true
+          },
+          "ftpsExplicit": {
+            "type": "boolean",
+            "default": true
+          },
+          "ftpsProtection": {
+            "enum": [
+              "default",
+              "clear",
+              "private"
+            ]
+          },
+          "disableTls13": {
+            "type": "boolean"
+          },
+          "showHidden": {
+            "type": "boolean",
+            "default": true
+          },
+          "keepAliveSecs": {
+            "type": "number"
+          },
+          "timeoutSecs": {
+            "type": "number",
+            "default": 30
+          },
+          "ssl": {
+            "type": "boolean",
+            "default": true
+          },
+          "rsync": {
+            "type": "boolean",
+            "default": false
+          },
+          "sudo": {
+            "type": "boolean",
+            "default": false
+          },
+          "global": {
+            "type": "boolean",
+            "description": "Connection settings are shared by all projects (stored in VS Code); only mappings are kept here."
+          },
+          "mappings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "local": {
+                  "type": "string"
+                },
+                "deploy": {
+                  "type": "string"
+                },
+                "web": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "excludedPaths": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "path"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "local": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "groups": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "servers"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "servers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "options": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "autoUpload": {
+          "enum": [
+            "always",
+            "onExplicitSave",
+            "never"
+          ]
+        },
+        "uploadExternalChanges": {
+          "type": "boolean"
+        },
+        "overwriteUpToDate": {
+          "type": "boolean"
+        },
+        "preserveTimestamps": {
+          "type": "boolean"
+        },
+        "deleteMissingItems": {
+          "type": "boolean"
+        },
+        "deleteRemoteOnLocalDelete": {
+          "type": "boolean"
+        },
+        "createEmptyFolders": {
+          "type": "boolean"
+        },
+        "promptOnLocalOverwrite": {
+          "type": "boolean"
+        },
+        "promptOnRemoteOverwrite": {
+          "enum": [
+            "none",
+            "timestamp",
+            "content"
+          ]
+        },
+        "notifyRemoteChanges": {
+          "type": "boolean"
+        },
+        "excludeByName": {
+          "type": "string"
+        },
+        "filePermissions": {
+          "type": "string",
+          "pattern": "^[0-7]{3,4}$"
+        },
+        "folderPermissions": {
+          "type": "string",
+          "pattern": "^[0-7]{3,4}$"
+        },
+        "useTempFile": {
+          "type": "boolean"
+        },
+        "confirmBeforeUploading": {
+          "type": "boolean"
+        },
+        "confirmBeforeDeletion": {
+          "type": "boolean"
+        },
+        "uploadOnCommit": {
+          "type": "string"
+        },
+        "logLevel": {
+          "enum": [
+            "errors",
+            "brief",
+            "details"
+          ]
+        },
+        "autoUploadDebounceMs": {
+          "type": "number"
+        },
+        "autoUploadConfirmOver": {
+          "type": "number"
+        }
+      }
+    }
+  }
+}
