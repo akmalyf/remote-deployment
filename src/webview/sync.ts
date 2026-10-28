@@ -450,8 +450,12 @@ function ensureEditor(): monaco.editor.IStandaloneDiffEditor {
     useInlineViewWhenSpaceIsLimited: false,
     ignoreTrimWhitespace: ignoreWs,
     renderMarginRevertIcon: false,
-    renderIndicators: true,
-    glyphMargin: true,
+    // Copy arrows live in the line decorations column (between numbers and code), which has room
+    // around them; the +/- indicators would share that column, and folding is replaced by collapse.
+    renderIndicators: false,
+    glyphMargin: false,
+    folding: false,
+    lineDecorationsWidth: 26,
     enableSplitViewResizing: true,
     hideUnchangedRegions: { enabled: collapse },
     wordWrap: wordWrap ? 'on' : 'off',
@@ -463,8 +467,7 @@ function ensureEditor(): monaco.editor.IStandaloneDiffEditor {
   });
   const original = diffEditor.getOriginalEditor();
   const modified = diffEditor.getModifiedEditor();
-  original.updateOptions({ glyphMargin: true, readOnly: false });
-  modified.updateOptions({ glyphMargin: true });
+  original.updateOptions({ readOnly: false });
   diffEditor.onDidUpdateDiff(() => {
     updateCount();
     updateGlyphs();
@@ -474,7 +477,7 @@ function ensureEditor(): monaco.editor.IStandaloneDiffEditor {
     [modified, 'remote'],
   ] as const) {
     ed.onMouseDown((e) => {
-      if (e.target.type === monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN && e.target.position) {
+      if (e.target.type === monaco.editor.MouseTargetType.GUTTER_LINE_DECORATIONS && e.target.position) {
         applyAt(side, e.target.position.lineNumber);
       }
     });
@@ -506,9 +509,9 @@ function updateGlyphs(): void {
     const remoteLine = Math.max(1, c.modifiedEndLineNumber === 0 ? c.modifiedStartLineNumber || 1 : c.modifiedStartLineNumber);
     const localLine = Math.max(1, c.originalEndLineNumber === 0 ? c.originalStartLineNumber || 1 : c.originalStartLineNumber);
     if (both) {
-      remoteDecos.push({ range: new monaco.Range(remoteLine, 1, remoteLine, 1), options: { glyphMarginClassName: 'arrow-accept', glyphMarginHoverMessage: { value: 'Accept: copy this change to the local file' } } });
+      remoteDecos.push({ range: new monaco.Range(remoteLine, 1, remoteLine, 1), options: { linesDecorationsClassName: 'arrow-accept', linesDecorationsTooltip: 'Copy this change to the local file' } });
       if (!remoteLocked) {
-        localDecos.push({ range: new monaco.Range(localLine, 1, localLine, 1), options: { glyphMarginClassName: 'arrow-push', glyphMarginHoverMessage: { value: 'Push: copy this change to the server' } } });
+        localDecos.push({ range: new monaco.Range(localLine, 1, localLine, 1), options: { linesDecorationsClassName: 'arrow-push', linesDecorationsTooltip: 'Copy this change to the server' } });
       }
     }
   }
@@ -628,9 +631,9 @@ function requestDiff(id: number): void {
 function showDiff(m: DiffMsg): void {
   if (m.id !== diffId) return;
   current = m;
-  $('localTitle').textContent = '\u200E' + (m.local.exists ? m.local.path : `${m.local.path} (does not exist)`) + '\u200E';
+  $('localTitle').textContent = '‎' + (m.local.exists ? m.local.path : `${m.local.path} (does not exist)`) + '‎';
   $('localTitle').title = m.local.path;
-  $('remoteTitle').textContent = '\u200E' + `${window.__DEPLOY__.server}:${m.remote.path}${m.remote.exists ? '' : ' (does not exist)'}` + '\u200E';
+  $('remoteTitle').textContent = '‎' + `${window.__DEPLOY__.server}:${m.remote.path}${m.remote.exists ? '' : ' (does not exist)'}` + '‎';
   $('remoteTitle').title = m.remote.path;
   const message = m.tooLarge ? 'File is too large to compare here.' : m.binary ? (m.identicalBinary ? 'Binary files are identical.' : 'Binary files differ.') : '';
   $('diffMessage').textContent = message;

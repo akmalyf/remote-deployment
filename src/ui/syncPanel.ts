@@ -506,11 +506,21 @@ export class SyncPanel {
   .toolbar { border-bottom: 1px solid var(--border); }
   .sep { width: 1px; height: 18px; background: var(--border); margin: 0 6px; }
   .tb { display: inline-flex; align-items: center; justify-content: center; min-width: 26px; height: 24px; padding: 0 4px; border: 1px solid transparent; border-radius: 4px; background: none; color: var(--vscode-icon-foreground, var(--vscode-foreground)); cursor: pointer; font: inherit; }
+  /* Selected toggles and rows share one neutral tint derived from the theme's text color. */
+  :root { --accent: var(--vscode-focusBorder, #0078d4); --ease: 120ms ease-out;
+    --sel: color-mix(in srgb, var(--vscode-foreground) 13%, transparent);
+    --sel-strong: color-mix(in srgb, var(--vscode-foreground) 18%, transparent);
+    --sel-soft: color-mix(in srgb, var(--vscode-foreground) 8%, transparent); }
+  .tb { transition: background-color var(--ease), border-color var(--ease), color var(--ease), opacity var(--ease); }
   .tb:hover:not(:disabled) { background: var(--vscode-toolbar-hoverBackground); }
-  .tb.on { background: var(--vscode-inputOption-activeBackground); border-color: var(--vscode-inputOption-activeBorder, transparent); }
-  .tb:disabled { opacity: .4; cursor: default; }
-  .tb .glyph { font-weight: 700; font-size: 15px; line-height: 1; }
-  .g-new-left { color: var(--added); } .g-diff { color: var(--conflict); } .g-new-right { color: var(--added); }
+  .tb:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+  .tb.on { background: var(--sel); border-color: var(--sel-soft); }
+  .tb.on:hover:not(:disabled) { background: var(--sel-strong); }
+  .tb:disabled { opacity: .35; cursor: default; }
+  .tb .glyph { font-weight: 600; font-size: 14px; line-height: 1; transition: opacity var(--ease); }
+  .tb[data-f] { min-width: 28px; }
+  .tb[data-f]:not(.on) .glyph { opacity: .4; }
+  .g-new-left, .g-new-right { color: var(--added); } .g-diff { color: var(--modified); }
   label.inline { display: inline-flex; align-items: center; gap: 6px; margin-left: 4px; }
   select { background: var(--vscode-dropdown-background); color: var(--vscode-dropdown-foreground); border: 1px solid var(--vscode-dropdown-border, var(--border)); border-radius: 3px; padding: 2px 4px; font: inherit; }
   .spacer { flex: 1; }
@@ -529,10 +539,14 @@ export class SyncPanel {
   .head > div { border-right: 1px solid var(--border); height: 100%; display: flex; align-items: center; }
   .head > div:last-child { border-right: none; }
   #body { flex: 1; overflow-y: auto; overflow-x: hidden; }
+  /* Selection: the neutral tint with a 2px edge on the current row, keeping the status colors readable. */
+  #body .row { transition: background-color var(--ease), box-shadow var(--ease); }
   #body .row:hover { background: var(--vscode-list-hoverBackground); }
-  #body .row.sel { background: var(--vscode-list-inactiveSelectionBackground); color: var(--vscode-list-inactiveSelectionForeground, inherit); }
-  .table:focus-within #body .row.sel { background: var(--vscode-list-activeSelectionBackground); color: var(--vscode-list-activeSelectionForeground, inherit); }
-  .table:focus-within #body .row.cursor { outline: 1px solid var(--vscode-list-focusOutline, var(--vscode-focusBorder)); outline-offset: -1px; }
+  #body .row.sel, #body .row.sel:hover { background: var(--sel-soft); }
+  .table:focus-within #body .row.sel, .table:focus-within #body .row.sel:hover { background: var(--sel); }
+  #body .row.cursor { box-shadow: inset 2px 0 0 color-mix(in srgb, var(--vscode-foreground) 30%, transparent); }
+  .table:focus-within #body .row.cursor { box-shadow: inset 2px 0 0 color-mix(in srgb, var(--vscode-foreground) 55%, transparent); }
+  @media (prefers-reduced-motion: reduce) { .tb, .tb .glyph, #body .row { transition: none; } }
   .num { text-align: right; font-variant-numeric: tabular-nums; }
   .date { font-variant-numeric: tabular-nums; }
   .op { text-align: center; padding: 0 !important; cursor: pointer; font-weight: 700; border-left: 1px solid var(--border); border-right: 1px solid var(--border); height: 100%; display: flex; align-items: center; justify-content: center; }
@@ -567,11 +581,23 @@ export class SyncPanel {
   .menu { position: absolute; right: 6px; top: 30px; z-index: 10; background: var(--vscode-menu-background, var(--vscode-editorWidget-background)); color: var(--vscode-menu-foreground, inherit); border: 1px solid var(--vscode-menu-border, var(--border)); border-radius: 4px; padding: 4px 0; box-shadow: 0 2px 8px var(--vscode-widget-shadow, rgba(0,0,0,.4)); }
   .menu label { display: flex; gap: 8px; align-items: center; padding: 4px 12px; cursor: pointer; white-space: nowrap; }
   .menu label:hover { background: var(--vscode-menu-selectionBackground, var(--vscode-list-hoverBackground)); }
-  .arrow-accept, .arrow-push { cursor: pointer; }
-  .arrow-accept::before, .arrow-push::before { font-weight: 700; font-size: 14px; color: var(--vscode-textLink-foreground); display: block; text-align: center; line-height: inherit; }
-  .arrow-accept::before { content: '«'; }
-  .arrow-push::before { content: '»'; }
-  .arrow-accept:hover::before, .arrow-push:hover::before { color: var(--vscode-textLink-activeForeground); }
+  /* Copy arrows: a small round chip centred in the decorations column, with breathing room on both sides. */
+  .monaco-editor .arrow-accept, .monaco-editor .arrow-push { display: flex !important; align-items: center; justify-content: center; cursor: pointer; }
+  .monaco-editor .arrow-accept::before, .monaco-editor .arrow-push::before {
+    font: normal normal normal 12px/16px codicon; width: 16px; height: 16px; border-radius: 50%; text-align: center;
+    color: var(--vscode-textLink-foreground, #4daafc);
+    background: color-mix(in srgb, var(--vscode-textLink-foreground, #4daafc) 16%, transparent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--vscode-textLink-foreground, #4daafc) 28%, transparent);
+    transition: background-color 140ms ease-out, color 140ms ease-out, transform 140ms ease-out;
+  }
+  .monaco-editor .arrow-accept::before { content: '\\ea9b'; }
+  .monaco-editor .arrow-push::before { content: '\\ea9c'; }
+  .monaco-editor .arrow-accept:hover::before, .monaco-editor .arrow-push:hover::before {
+    color: var(--vscode-button-foreground, #fff);
+    background: var(--vscode-textLink-foreground, #4daafc);
+    transform: scale(1.12);
+  }
+  @media (prefers-reduced-motion: reduce) { .monaco-editor .arrow-accept::before, .monaco-editor .arrow-push::before { transition: none; } }
 </style></head><body>
 <div class="toolbar">
   <button class="tb" id="refresh" title="Refresh (Ctrl+R)"><i class="codicon codicon-refresh"></i></button>
