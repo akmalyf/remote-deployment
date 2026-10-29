@@ -49,7 +49,7 @@ const CONTENT_COMPARE_LIMIT = 20 * 1024 * 1024;
 
 /**
  * "Sync with Deployed": a directory diff. Local items on the left, deployed items on the
- * right, the operation in between; the selected file's diff is shown below (Monaco, in the webview).
+ * right, the operation in between; the selected file's diff is shown below (ide-diff, in the webview).
  */
 export class SyncPanel {
   static extensionUri: vscode.Uri;
@@ -484,13 +484,10 @@ export class SyncPanel {
       `font-src ${webview.cspSource} data:`,
       `img-src ${webview.cspSource} data:`,
       `script-src 'nonce-${nonce}' ${webview.cspSource}`,
-      `connect-src ${webview.cspSource}`,
-      'worker-src blob:',
     ].join('; ');
-    const config = JSON.stringify({ workerUrl: media('editor.worker.js').toString(), server: this.server.name });
+    const config = JSON.stringify({ server: this.server.name });
     return /* html */ `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta http-equiv="Content-Security-Policy" content="${csp}">
 <link rel="stylesheet" href="${media('codicon.css')}">
-<link rel="stylesheet" href="${media('sync.css')}">
 <style>
   :root {
     --added: var(--vscode-gitDecoration-addedResourceForeground, #73c991);
@@ -502,7 +499,7 @@ export class SyncPanel {
   * { box-sizing: border-box; }
   html, body { height: 100%; }
   body { margin: 0; padding: 0; display: flex; flex-direction: column; font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); color: var(--vscode-foreground); background: var(--vscode-editor-background); overflow: hidden; }
-  .toolbar, .difftools { display: flex; align-items: center; gap: 2px; padding: 3px 6px; flex: none; user-select: none; }
+  .toolbar { display: flex; align-items: center; gap: 2px; padding: 3px 6px; flex: none; user-select: none; }
   .toolbar { border-bottom: 1px solid var(--border); }
   .sep { width: 1px; height: 18px; background: var(--border); margin: 0 6px; }
   .tb { display: inline-flex; align-items: center; justify-content: center; min-width: 26px; height: 24px; padding: 0 4px; border: 1px solid transparent; border-radius: 4px; background: none; color: var(--vscode-icon-foreground, var(--vscode-foreground)); cursor: pointer; font: inherit; }
@@ -567,37 +564,50 @@ export class SyncPanel {
   #splitter { flex: none; height: 5px; cursor: ns-resize; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); background: var(--vscode-editorGroupHeader-tabsBackground, transparent); }
   #splitter:hover { background: var(--vscode-sash-hoverBorder, var(--vscode-focusBorder)); }
   .diffpane { flex: 1; display: flex; flex-direction: column; min-height: 0; position: relative; }
-  .difftools { border-bottom: 1px solid var(--border); }
-  #diffCount { margin-right: 8px; opacity: .9; }
-  .titles { display: grid; grid-template-columns: 1fr 1fr; flex: none; font-size: 12px; border-bottom: 1px solid var(--border); }
-  body.unified .titles .t-remote { display: none; }
-  body.unified .titles { grid-template-columns: 1fr; }
-  .titles > div { display: flex; align-items: center; gap: 6px; padding: 2px 8px; min-width: 0; }
-  .titles > div + div { border-left: 1px solid var(--border); }
-  .titles .p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: .85; flex: 1; direction: rtl; text-align: left; }
-  .dirty { color: var(--vscode-editorWarning-foreground, #cca700); white-space: nowrap; }
   #diff { flex: 1; min-height: 0; }
   #diffMessage { position: absolute; top: 90px; left: 0; right: 0; text-align: center; opacity: .75; }
-  .menu { position: absolute; right: 6px; top: 30px; z-index: 10; background: var(--vscode-menu-background, var(--vscode-editorWidget-background)); color: var(--vscode-menu-foreground, inherit); border: 1px solid var(--vscode-menu-border, var(--border)); border-radius: 4px; padding: 4px 0; box-shadow: 0 2px 8px var(--vscode-widget-shadow, rgba(0,0,0,.4)); }
-  .menu label { display: flex; gap: 8px; align-items: center; padding: 4px 12px; cursor: pointer; white-space: nowrap; }
-  .menu label:hover { background: var(--vscode-menu-selectionBackground, var(--vscode-list-hoverBackground)); }
-  /* Copy arrows: a small round chip centred in the decorations column, with breathing room on both sides. */
-  .monaco-editor .arrow-accept, .monaco-editor .arrow-push { display: flex !important; align-items: center; justify-content: center; cursor: pointer; }
-  .monaco-editor .arrow-accept::before, .monaco-editor .arrow-push::before {
-    font: normal normal normal 12px/16px codicon; width: 16px; height: 16px; border-radius: 50%; text-align: center;
-    color: var(--vscode-textLink-foreground, #4daafc);
-    background: color-mix(in srgb, var(--vscode-textLink-foreground, #4daafc) 16%, transparent);
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--vscode-textLink-foreground, #4daafc) 28%, transparent);
-    transition: background-color 140ms ease-out, color 140ms ease-out, transform 140ms ease-out;
+  /* ide-diff keeps its JetBrains diff and syntax colors; the chrome and editor follow the VS Code theme. */
+  body .idd-theme-dark, body .idd-theme-light {
+    --idd-font-family: var(--vscode-editor-font-family);
+    --idd-font-size: var(--vscode-editor-font-size);
+    --idd-line-height: calc(var(--vscode-editor-font-size) * 1.6);
+    --idd-ui-font-family: var(--vscode-font-family);
+    --idd-ui-font-size: var(--vscode-font-size);
+    --idd-editor-bg: var(--vscode-editor-background);
+    --idd-editor-fg: var(--vscode-editor-foreground);
+    --idd-gutter-bg: var(--vscode-editorGutter-background, var(--vscode-editor-background));
+    --idd-divider-bg: var(--vscode-editorGutter-background, var(--vscode-editor-background));
+    --idd-caret: var(--vscode-editorCursor-foreground);
+    --idd-caret-row-bg: var(--vscode-editor-lineHighlightBackground, transparent);
+    --idd-selection-bg: var(--vscode-editor-selectionBackground);
+    --idd-line-number: var(--vscode-editorLineNumber-foreground);
+    --idd-line-number-caret-row: var(--vscode-editorLineNumber-activeForeground);
+    --idd-whitespace: var(--vscode-editorWhitespace-foreground);
+    --idd-search-result-bg: var(--vscode-editor-findMatchHighlightBackground);
+    --idd-matched-brace-bg: var(--vscode-editorBracketMatch-background);
+    --idd-panel-bg: var(--vscode-editor-background);
+    --idd-toolbar-bg: var(--vscode-editor-background);
+    --idd-window-bg: var(--vscode-editorWidget-background);
+    --idd-border: var(--border);
+    --idd-fg: var(--vscode-foreground);
+    --idd-title-fg: var(--vscode-foreground);
+    --idd-fg-muted: var(--vscode-descriptionForeground);
+    --idd-fg-disabled: var(--vscode-disabledForeground);
+    --idd-button-hover-bg: var(--vscode-toolbar-hoverBackground);
+    --idd-button-pressed-bg: var(--vscode-toolbar-activeBackground, var(--vscode-toolbar-hoverBackground));
+    --idd-popup-bg: var(--vscode-menu-background, var(--vscode-editorWidget-background));
+    --idd-popup-border: var(--vscode-menu-border, var(--vscode-widget-border, var(--border)));
+    --idd-list-selection-bg: var(--vscode-menu-selectionBackground, var(--vscode-list-activeSelectionBackground));
+    --idd-list-hover-bg: var(--vscode-list-hoverBackground);
+    --idd-focus: var(--vscode-focusBorder);
+    --idd-accent: var(--vscode-focusBorder);
+    --idd-link: var(--vscode-textLink-foreground);
+    --idd-tooltip-bg: var(--vscode-editorHoverWidget-background, var(--vscode-editorWidget-background));
+    --idd-tooltip-fg: var(--vscode-editorHoverWidget-foreground, var(--vscode-foreground));
+    --idd-scrollbar-thumb: var(--vscode-scrollbarSlider-background);
+    --idd-scrollbar-thumb-hover: var(--vscode-scrollbarSlider-hoverBackground);
   }
-  .monaco-editor .arrow-accept::before { content: '\\ea9b'; }
-  .monaco-editor .arrow-push::before { content: '\\ea9c'; }
-  .monaco-editor .arrow-accept:hover::before, .monaco-editor .arrow-push:hover::before {
-    color: var(--vscode-button-foreground, #fff);
-    background: var(--vscode-textLink-foreground, #4daafc);
-    transform: scale(1.12);
-  }
-  @media (prefers-reduced-motion: reduce) { .monaco-editor .arrow-accept::before, .monaco-editor .arrow-push::before { transition: none; } }
+  .idd-toolbar { border-bottom: 1px solid var(--border); }
 </style></head><body>
 <div class="toolbar">
   <button class="tb" id="refresh" title="Refresh (Ctrl+R)"><i class="codicon codicon-refresh"></i></button>
@@ -635,31 +645,6 @@ export class SyncPanel {
   </div>
   <div id="splitter" title="Drag to resize"></div>
   <div class="diffpane">
-    <div class="difftools">
-      <button class="tb" id="prevDiff" title="Previous Difference (Shift+F7)"><i class="codicon codicon-arrow-up"></i></button>
-      <button class="tb" id="nextDiff" title="Next Difference (F7)"><i class="codicon codicon-arrow-down"></i></button>
-      <span class="sep"></span>
-      <button class="tb" id="editSource" title="Edit Source (F4)"><i class="codicon codicon-edit"></i></button>
-      <span class="sep"></span>
-      <button class="tb" id="prevFile" title="Compare Previous File"><i class="codicon codicon-arrow-left"></i></button>
-      <button class="tb" id="nextFile" title="Compare Next File"><i class="codicon codicon-arrow-right"></i></button>
-      <span class="sep"></span>
-      <button class="tb" id="collapse" title="Collapse Unchanged Fragments"><i class="codicon codicon-fold"></i></button>
-      <span class="spacer"></span>
-      <span id="diffCount"></span>
-      <button class="tb" id="sideBySide" title="Side-by-side viewer"><i class="codicon codicon-split-horizontal"></i></button>
-      <button class="tb" id="unified" title="Unified viewer"><i class="codicon codicon-file"></i></button>
-      <span class="sep"></span>
-      <button class="tb" id="settings" title="Settings"><i class="codicon codicon-gear"></i></button>
-      <div class="menu" id="settingsMenu" hidden>
-        <label><input type="checkbox" id="optIgnoreWs"> Ignore whitespace</label>
-        <label><input type="checkbox" id="optWrap"> Soft-wrap</label>
-      </div>
-    </div>
-    <div class="titles">
-      <div class="t-local"><i class="codicon codicon-folder"></i><span class="p" id="localTitle"></span><span class="dirty" id="localDirty"></span></div>
-      <div class="t-remote"><button class="tb" id="lock"><i class="codicon codicon-lock"></i></button><span class="p" id="remoteTitle"></span><span class="dirty" id="remoteDirty"></span></div>
-    </div>
     <div id="diff"></div>
     <div id="diffMessage">Select a file to compare.</div>
   </div>
@@ -678,7 +663,7 @@ function isBinary(data: Buffer): boolean {
 
 const LANGUAGES: Record<string, string> = {
   php: 'php', phtml: 'php', inc: 'php', js: 'javascript', mjs: 'javascript', cjs: 'javascript', jsx: 'javascript', ts: 'typescript', tsx: 'typescript',
-  json: 'javascript', html: 'html', htm: 'html', vue: 'html', css: 'css', scss: 'scss', less: 'less', xml: 'xml', svg: 'xml', yml: 'yaml', yaml: 'yaml',
+  json: 'json', html: 'html', htm: 'html', vue: 'html', css: 'css', scss: 'scss', less: 'less', xml: 'xml', svg: 'xml', yml: 'yaml', yaml: 'yaml',
   md: 'markdown', py: 'python', sql: 'sql', sh: 'shell', bash: 'shell', zsh: 'shell', ini: 'ini', env: 'ini', conf: 'ini', twig: 'twig', go: 'go',
   java: 'java', rb: 'ruby', rs: 'rust', cs: 'csharp', c: 'cpp', h: 'cpp', cpp: 'cpp', hpp: 'cpp', kt: 'kotlin', swift: 'swift', hbs: 'handlebars',
   pug: 'pug', graphql: 'graphql', gql: 'graphql', ps1: 'powershell', bat: 'bat', cmd: 'bat',

@@ -6,9 +6,9 @@
 
 - **Remote Host view.** Every configured server in one tree. Drag files in from the Explorer, drag to move, create, rename, delete, cut / copy / paste, change permissions (rwx or octal), copy paths and web URLs, exclude paths, jump to any folder. Mapped items are green, excluded items are dimmed.
 - **Upload / Download.** Right-click any file or folder → **Deployment** → Upload, Download, Compare, Sync, Edit Remote File. Upload To… / Download From… any server or group, and Upload All Open Files, from the Command Palette (`⌘⇧⌥X` / `Ctrl+Shift+Alt+X` for Upload To…).
-- **Sync with Deployed.** Local and deployed files side by side (Name · Size · Date · operation · Date · Size · Name) with filters for new, different and equal files, and Compare by binary content, size, or size and timestamp. Space or click changes the operation, Enter performs it. The selected file's diff sits right below the table, with syntax highlighting and your theme's colors:
+- **Sync with Deployed.** Local and deployed files side by side (Name · Size · Date · operation · Date · Size · Name) with filters for new, different and equal files, and Compare by binary content, size, or size and timestamp. Space or click changes the operation, Enter performs it. The selected file's diff sits right below the table: a JetBrains-style diff ([ide-diff](https://github.com/akmalyf/ide-diff)) with IntelliJ's diff algorithms, word-level highlighting, a curved divider between changes and syntax highlighting, in your theme's colors:
   - `«` copies a change from the server into the local file; unlock the deployed side to edit it and push changes back with `»`
-  - previous / next difference (F7 / Shift+F7), previous / next file, collapse unchanged lines, side-by-side or unified, ignore whitespace, soft-wrap
+  - previous / next difference (F7 / Shift+F7), previous / next file, collapse unchanged fragments, side-by-side or unified, ignore policies (whitespace, empty lines), highlighting by lines / words / characters, whitespaces, line numbers, soft wraps
 - **Edit Remote File.** Open a deployed file directly; saving uploads it (with a warning when the server copy changed or was deleted meanwhile). Upload Current Remote File (`⇧⌥Q`), Refresh, and Compare / Revert to the last uploaded version.
 - **Automatic upload.** Always, or on explicit save only. Optionally includes changes made outside the editor and deletes remote files when local ones are deleted. Changes are batched per project.
 - **SSH terminal** for SFTP servers, opened in the server's folder.
@@ -114,3 +114,5 @@ npm run package
 ## License
 
 [MIT](LICENSE)
+
+The Sync diff uses [ide-diff](https://github.com/akmalyf/ide-diff) (Apache-2.0), a port of parts of the [JetBrains IntelliJ Platform](https://github.com/JetBrains/intellij-community) (Apache-2.0), and [CodeMirror](https://codemirror.net/) (MIT).

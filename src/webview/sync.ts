@@ -1,49 +1,9 @@
 // Sync with Deployed webview: a directory diff (table on top) with the selected file's
-// diff below (Monaco). Talks to SyncPanel through postMessage.
-import * as monaco from 'monaco-editor/editor/editor.api.js';
-import 'monaco-editor/editor/contrib/find/browser/findController.js';
-import 'monaco-editor/editor/contrib/folding/browser/folding.js';
-import 'monaco-editor/editor/contrib/bracketMatching/browser/bracketMatching.js';
-import 'monaco-editor/editor/contrib/clipboard/browser/clipboard.js';
-import 'monaco-editor/editor/contrib/comment/browser/comment.js';
-import 'monaco-editor/editor/contrib/linesOperations/browser/linesOperations.js';
-import 'monaco-editor/editor/contrib/multicursor/browser/multicursor.js';
-import 'monaco-editor/editor/contrib/wordHighlighter/browser/wordHighlighter.js';
-import 'monaco-editor/editor/contrib/cursorUndo/browser/cursorUndo.js';
-import 'monaco-editor/editor/contrib/wordOperations/browser/wordOperations.js';
-import 'monaco-editor/editor/contrib/contextmenu/browser/contextmenu.js';
-import 'monaco-editor/editor/contrib/indentation/browser/indentation.js';
-import 'monaco-editor/editor/contrib/readOnlyMessage/browser/contribution.js';
-import 'monaco-editor/languages/definitions/php/register.js';
-import 'monaco-editor/languages/definitions/javascript/register.js';
-import 'monaco-editor/languages/definitions/typescript/register.js';
-import 'monaco-editor/languages/definitions/html/register.js';
-import 'monaco-editor/languages/definitions/css/register.js';
-import 'monaco-editor/languages/definitions/scss/register.js';
-import 'monaco-editor/languages/definitions/less/register.js';
-import 'monaco-editor/languages/definitions/xml/register.js';
-import 'monaco-editor/languages/definitions/yaml/register.js';
-import 'monaco-editor/languages/definitions/markdown/register.js';
-import 'monaco-editor/languages/definitions/python/register.js';
-import 'monaco-editor/languages/definitions/sql/register.js';
-import 'monaco-editor/languages/definitions/mysql/register.js';
-import 'monaco-editor/languages/definitions/shell/register.js';
-import 'monaco-editor/languages/definitions/ini/register.js';
-import 'monaco-editor/languages/definitions/dockerfile/register.js';
-import 'monaco-editor/languages/definitions/twig/register.js';
-import 'monaco-editor/languages/definitions/go/register.js';
-import 'monaco-editor/languages/definitions/java/register.js';
-import 'monaco-editor/languages/definitions/ruby/register.js';
-import 'monaco-editor/languages/definitions/rust/register.js';
-import 'monaco-editor/languages/definitions/csharp/register.js';
-import 'monaco-editor/languages/definitions/cpp/register.js';
-import 'monaco-editor/languages/definitions/kotlin/register.js';
-import 'monaco-editor/languages/definitions/swift/register.js';
-import 'monaco-editor/languages/definitions/handlebars/register.js';
-import 'monaco-editor/languages/definitions/pug/register.js';
-import 'monaco-editor/languages/definitions/graphql/register.js';
-import 'monaco-editor/languages/definitions/powershell/register.js';
-import 'monaco-editor/languages/definitions/bat/register.js';
+// diff below (ide-diff, JetBrains-style on CodeMirror 6). Talks to SyncPanel through postMessage.
+import { createDiffViewer, getIcon, type DiffViewerHost, type DiffViewerOptions, type IconName } from '@ide-diff/viewer';
+import { Prec } from '@codemirror/state';
+import { EditorView, keymap } from '@codemirror/view';
+import { languageFor } from './languages';
 
 type State = 'equal' | 'different' | 'localOnly' | 'remoteOnly' | 'conflict';
 type Op = 'upload' | 'download' | 'deleteLocal' | 'deleteRemote' | 'skip' | 'none';
@@ -76,7 +36,7 @@ interface DiffMsg {
 declare function acquireVsCodeApi(): { postMessage(m: unknown): void; getState(): any; setState(s: unknown): void };
 declare global {
   interface Window {
-    __DEPLOY__: { workerUrl: string; server: string };
+    __DEPLOY__: { server: string };
   }
 }
 
@@ -85,16 +45,6 @@ const $ = <T extends HTMLElement = HTMLElement>(id: string): T => document.getEl
 const esc = (s: unknown): string => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 const persisted = vscode.getState() || {};
 const persist = (patch: Record<string, unknown>): void => vscode.setState({ ...(vscode.getState() || {}), ...patch });
-
-// ------------------------------------------------------------------ monaco worker
-
-(self as unknown as { MonacoEnvironment: monaco.Environment }).MonacoEnvironment = {
-  // Webview resources are cross-origin for workers: load the script text into a blob worker.
-  getWorker: async () => {
-    const code = await (await fetch(window.__DEPLOY__.workerUrl)).text();
-    return new Worker(URL.createObjectURL(new Blob([code], { type: 'text/javascript' })));
-  },
-};
 
 // ------------------------------------------------------------------ table
 
@@ -279,7 +229,7 @@ $('table').addEventListener('keydown', (e) => {
   else if (k === 'End') setCursor(view.length - 1, e.shiftKey);
   else if (k === ' ') cycle(selectedRows());
   else if (k === 'Enter') perform(selectedRows());
-  else if (k === 'F7') diffEditor?.goToDiff(e.shiftKey ? 'previous' : 'next');
+  else if (k === 'F7') e.shiftKey ? viewer?.goToPreviousChange() : viewer?.goToNextChange();
   else if (k === 'F4') view[cursor] && vscode.postMessage({ type: 'open', id: view[cursor].id });
   else if (mod && k.toLowerCase() === 'a') {
     selected = new Set(view.map((r) => r.id));
@@ -327,7 +277,7 @@ const main = $('main');
 let split = typeof persisted.split === 'number' ? persisted.split : 0.4;
 function applySplit(): void {
   main.style.setProperty('--top', `${Math.round(split * 1000) / 10}%`);
-  diffEditor?.layout();
+  viewer?.layout();
 }
 applySplit();
 $('splitter').addEventListener('mousedown', (e) => {
@@ -346,260 +296,74 @@ $('splitter').addEventListener('mousedown', (e) => {
   window.addEventListener('mouseup', up);
 });
 
-// ------------------------------------------------------------------ theme
+// ------------------------------------------------------------------ diff viewer
 
-function toHex(color: string): string | undefined {
-  if (!color) return undefined;
-  const ctx = document.createElement('canvas').getContext('2d')!;
-  ctx.fillStyle = '#00000000';
-  ctx.fillStyle = color.trim();
-  const v = ctx.fillStyle;
-  if (v.startsWith('#')) return v;
-  const m = /rgba?\(([^)]+)\)/.exec(v);
-  if (!m) return undefined;
-  const [r, g, b, a = '1'] = m[1].split(',').map((s) => s.trim());
-  const h = (n: number): string => Math.round(n).toString(16).padStart(2, '0');
-  return `#${h(+r)}${h(+g)}${h(+b)}${Number(a) < 1 ? h(Number(a) * 255) : ''}`;
-}
+type Impl = ReturnType<DiffViewerHost['getImplementation']>;
+type Settings = ReturnType<Impl['exportOptions']>;
+type Appearance = Pick<Settings, 'showWhitespaces' | 'showLineNumbers' | 'softWraps'>;
 
-function defineTheme(): void {
-  const css = getComputedStyle(document.documentElement);
-  const v = (name: string): string | undefined => toHex(css.getPropertyValue(`--vscode-${name}`));
-  const cls = document.body.classList;
-  const base: monaco.editor.BuiltinTheme = cls.contains('vscode-high-contrast') ? 'hc-black' : cls.contains('vscode-light') ? 'vs' : 'vs-dark';
-  const map: Record<string, string> = {
-    'editor.background': 'editor-background',
-    'editor.foreground': 'editor-foreground',
-    'editorLineNumber.foreground': 'editorLineNumber-foreground',
-    'editorLineNumber.activeForeground': 'editorLineNumber-activeForeground',
-    'editor.selectionBackground': 'editor-selectionBackground',
-    'editor.inactiveSelectionBackground': 'editor-inactiveSelectionBackground',
-    'editor.lineHighlightBackground': 'editor-lineHighlightBackground',
-    'editor.lineHighlightBorder': 'editor-lineHighlightBorder',
-    'editorCursor.foreground': 'editorCursor-foreground',
-    'editorWhitespace.foreground': 'editorWhitespace-foreground',
-    'editorIndentGuide.background1': 'editorIndentGuide-background1',
-    'editorGutter.background': 'editorGutter-background',
-    'editorWidget.background': 'editorWidget-background',
-    'editorWidget.border': 'editorWidget-border',
-    'input.background': 'input-background',
-    'input.foreground': 'input-foreground',
-    'focusBorder': 'focusBorder',
-    'scrollbarSlider.background': 'scrollbarSlider-background',
-    'scrollbarSlider.hoverBackground': 'scrollbarSlider-hoverBackground',
-    'scrollbarSlider.activeBackground': 'scrollbarSlider-activeBackground',
-    'diffEditor.insertedTextBackground': 'diffEditor-insertedTextBackground',
-    'diffEditor.removedTextBackground': 'diffEditor-removedTextBackground',
-    'diffEditor.insertedLineBackground': 'diffEditor-insertedLineBackground',
-    'diffEditor.removedLineBackground': 'diffEditor-removedLineBackground',
-    'diffEditor.diagonalFill': 'diffEditor-diagonalFill',
-    'diffEditor.border': 'diffEditor-border',
-    'diffEditorGutter.insertedLineBackground': 'diffEditorGutter-insertedLineBackground',
-    'diffEditorGutter.removedLineBackground': 'diffEditorGutter-removedLineBackground',
-    'diffEditor.unchangedRegionBackground': 'diffEditor-unchangedRegionBackground',
-    'diffEditor.unchangedRegionForeground': 'diffEditor-unchangedRegionForeground',
-    'editorBracketMatch.background': 'editorBracketMatch-background',
-    'editorBracketMatch.border': 'editorBracketMatch-border',
-    'editor.findMatchBackground': 'editor-findMatchBackground',
-    'editor.findMatchHighlightBackground': 'editor-findMatchHighlightBackground',
-    'editor.wordHighlightBackground': 'editor-wordHighlightBackground',
-  };
-  const colors: Record<string, string> = {};
-  for (const [k, cssName] of Object.entries(map)) {
-    const c = v(cssName);
-    if (c) colors[k] = c;
-  }
-  monaco.editor.defineTheme('vscode', { base, inherit: true, rules: [], colors });
-  monaco.editor.setTheme('vscode');
-}
-
-// ------------------------------------------------------------------ diff editor
-
-let diffEditor: monaco.editor.IStandaloneDiffEditor | undefined;
+let viewer: DiffViewerHost | undefined;
 let diffId = -1;
 let current: DiffMsg | undefined;
-let localModel: monaco.editor.ITextModel | undefined;
-let remoteModel: monaco.editor.ITextModel | undefined;
 let savedLocal = '';
 let savedRemote = '';
+let dirty = { local: false, remote: false };
 let remoteLocked = true;
-let sideBySide = persisted.sideBySide !== false;
-let collapse = !!persisted.collapse;
-let ignoreWs = !!persisted.ignoreWs;
-let wordWrap = !!persisted.wordWrap;
-let glyphs: { local?: monaco.editor.IEditorDecorationsCollection; remote?: monaco.editor.IEditorDecorationsCollection } = {};
+// The viewer is re-created for every file (so undo never crosses files); its settings carry over.
+let settings: Partial<DiffViewerOptions> = persisted.viewer || {};
+let appearance: Appearance | undefined = persisted.appearance;
 
-function fontOptions(): monaco.editor.IEditorOptions {
-  const css = getComputedStyle(document.documentElement);
+const theme = (): 'dark' | 'light' => (/\bvscode-(light|high-contrast-light)\b/.test(document.body.className) ? 'light' : 'dark');
+new MutationObserver(() => viewer?.setOptions({ theme: theme() })).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+
+function saveSettings(): void {
+  if (!viewer) return;
+  const o = viewer.getImplementation().exportOptions();
+  settings = { mode: o.mode, ignorePolicy: o.ignorePolicy, highlightPolicy: o.highlightPolicy, collapseUnchanged: o.collapseUnchanged, syncScroll: o.syncScroll };
+  appearance = { showWhitespaces: o.showWhitespaces, showLineNumbers: o.showLineNumbers, softWraps: o.softWraps };
+  remoteLocked = o.readOnly[1];
+  persist({ viewer: settings, appearance });
+}
+
+function disposeViewer(): void {
+  if (!viewer) return;
+  saveSettings();
+  viewer.dispose();
+  viewer = undefined;
+}
+
+function showMessage(text: string): void {
+  disposeViewer();
+  $('diffMessage').textContent = text;
+  $('diffMessage').hidden = false;
+}
+
+function titles(): Pick<DiffViewerOptions, 'originalTitle' | 'modifiedTitle'> {
+  const m = current!;
   return {
-    fontFamily: css.getPropertyValue('--vscode-editor-font-family').trim() || undefined,
-    fontSize: parseInt(css.getPropertyValue('--vscode-editor-font-size'), 10) || 13,
+    originalTitle: (m.local.exists ? m.local.path : `${m.local.path} (does not exist)`) + (dirty.local ? '  ● modified' : ''),
+    modifiedTitle:
+      `${window.__DEPLOY__.server}:${m.remote.path}${m.remote.exists ? '' : ' (does not exist)'}` + (dirty.remote ? '  ● modified — Ctrl+S to upload' : ''),
   };
-}
-
-function ensureEditor(): monaco.editor.IStandaloneDiffEditor {
-  if (diffEditor) return diffEditor;
-  defineTheme();
-  new MutationObserver(defineTheme).observe(document.body, { attributes: true, attributeFilter: ['class'] });
-  diffEditor = monaco.editor.createDiffEditor($('diff'), {
-    theme: 'vscode',
-    automaticLayout: true,
-    originalEditable: true,
-    readOnly: remoteLocked,
-    renderSideBySide: sideBySide,
-    useInlineViewWhenSpaceIsLimited: false,
-    ignoreTrimWhitespace: ignoreWs,
-    renderMarginRevertIcon: false,
-    // Copy arrows live in the line decorations column (between numbers and code), which has room
-    // around them; the +/- indicators would share that column, and folding is replaced by collapse.
-    renderIndicators: false,
-    glyphMargin: false,
-    folding: false,
-    lineDecorationsWidth: 26,
-    enableSplitViewResizing: true,
-    hideUnchangedRegions: { enabled: collapse },
-    wordWrap: wordWrap ? 'on' : 'off',
-    diffWordWrap: wordWrap ? 'on' : 'off',
-    scrollBeyondLastLine: false,
-    minimap: { enabled: false },
-    renderOverviewRuler: true,
-    ...fontOptions(),
-  });
-  const original = diffEditor.getOriginalEditor();
-  const modified = diffEditor.getModifiedEditor();
-  original.updateOptions({ readOnly: false });
-  diffEditor.onDidUpdateDiff(() => {
-    updateCount();
-    updateGlyphs();
-  });
-  for (const [ed, side] of [
-    [original, 'local'],
-    [modified, 'remote'],
-  ] as const) {
-    ed.onMouseDown((e) => {
-      if (e.target.type === monaco.editor.MouseTargetType.GUTTER_LINE_DECORATIONS && e.target.position) {
-        applyAt(side, e.target.position.lineNumber);
-      }
-    });
-    ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => save(side));
-    ed.addCommand(monaco.KeyCode.F7, () => diffEditor!.goToDiff('next'));
-    ed.addCommand(monaco.KeyMod.Shift | monaco.KeyCode.F7, () => diffEditor!.goToDiff('previous'));
-    ed.onDidChangeModelContent(() => updateDirty());
-  }
-  return diffEditor;
-}
-
-function lineChanges(): monaco.editor.ILineChange[] {
-  return diffEditor?.getLineChanges() ?? [];
-}
-
-function updateCount(): void {
-  const n = lineChanges().length;
-  $('diffCount').textContent = current && !current.binary && !current.tooLarge ? (n ? `${n} difference${n === 1 ? '' : 's'}` : 'Contents are identical') : '';
-}
-
-/** Gutter arrows: « on the remote side copies the block to local; » on the local side pushes it to the server (unlocked only). */
-function updateGlyphs(): void {
-  if (!diffEditor) return;
-  const changes = lineChanges();
-  const localDecos: monaco.editor.IModelDeltaDecoration[] = [];
-  const remoteDecos: monaco.editor.IModelDeltaDecoration[] = [];
-  const both = current?.local.exists && current?.remote.exists;
-  for (const c of changes) {
-    const remoteLine = Math.max(1, c.modifiedEndLineNumber === 0 ? c.modifiedStartLineNumber || 1 : c.modifiedStartLineNumber);
-    const localLine = Math.max(1, c.originalEndLineNumber === 0 ? c.originalStartLineNumber || 1 : c.originalStartLineNumber);
-    if (both) {
-      remoteDecos.push({ range: new monaco.Range(remoteLine, 1, remoteLine, 1), options: { linesDecorationsClassName: 'arrow-accept', linesDecorationsTooltip: 'Copy this change to the local file' } });
-      if (!remoteLocked) {
-        localDecos.push({ range: new monaco.Range(localLine, 1, localLine, 1), options: { linesDecorationsClassName: 'arrow-push', linesDecorationsTooltip: 'Copy this change to the server' } });
-      }
-    }
-  }
-  glyphs.local?.clear();
-  glyphs.remote?.clear();
-  glyphs = {
-    local: diffEditor.getOriginalEditor().createDecorationsCollection(localDecos),
-    remote: diffEditor.getModifiedEditor().createDecorationsCollection(remoteDecos),
-  };
-}
-
-function linesText(model: monaco.editor.ITextModel, start: number, end: number): string {
-  return model.getValueInRange(new monaco.Range(start, 1, end, model.getLineMaxColumn(end)));
-}
-
-/** Replace the target block of a line change with the source block. */
-function applyChange(c: monaco.editor.ILineChange, toLocal: boolean): void {
-  if (!localModel || !remoteModel) return;
-  const from = toLocal ? remoteModel : localModel;
-  const to = toLocal ? localModel : remoteModel;
-  const fromStart = toLocal ? c.modifiedStartLineNumber : c.originalStartLineNumber;
-  const fromEnd = toLocal ? c.modifiedEndLineNumber : c.originalEndLineNumber;
-  const toStart = toLocal ? c.originalStartLineNumber : c.modifiedStartLineNumber;
-  const toEnd = toLocal ? c.originalEndLineNumber : c.modifiedEndLineNumber;
-  let range: monaco.Range;
-  let text: string;
-  if (fromEnd === 0) {
-    // The source has no lines here: delete the target block including its line break.
-    if (toEnd < to.getLineCount()) {
-      range = new monaco.Range(toStart, 1, toEnd + 1, 1);
-    } else if (toStart > 1) {
-      range = new monaco.Range(toStart - 1, to.getLineMaxColumn(toStart - 1), toEnd, to.getLineMaxColumn(toEnd));
-    } else {
-      range = new monaco.Range(1, 1, toEnd, to.getLineMaxColumn(toEnd));
-    }
-    text = '';
-  } else {
-    const block = linesText(from, fromStart, fromEnd);
-    if (toEnd === 0) {
-      // Insert after line toStart.
-      if (toStart === 0) {
-        range = new monaco.Range(1, 1, 1, 1);
-        text = block + to.getEOL();
-      } else {
-        const col = to.getLineMaxColumn(toStart);
-        range = new monaco.Range(toStart, col, toStart, col);
-        text = to.getEOL() + block;
-      }
-    } else {
-      range = new monaco.Range(toStart, 1, toEnd, to.getLineMaxColumn(toEnd));
-      text = block;
-    }
-  }
-  to.pushEditOperations([], [{ range, text, forceMoveMarkers: true }], () => null);
-  to.pushStackElement();
-}
-
-function applyAt(side: 'local' | 'remote', line: number): void {
-  const toLocal = side === 'remote';
-  if (!toLocal && remoteLocked) return;
-  const c = lineChanges().find((ch) => {
-    const start = toLocal ? ch.modifiedStartLineNumber : ch.originalStartLineNumber;
-    const end = toLocal ? ch.modifiedEndLineNumber : ch.originalEndLineNumber;
-    const glyphLine = Math.max(1, end === 0 ? start || 1 : start);
-    return glyphLine === line;
-  });
-  if (!c) return;
-  applyChange(c, toLocal);
-  // Apply and save at once.
-  save(toLocal ? 'local' : 'remote');
 }
 
 function updateDirty(): void {
-  const localDirty = !!localModel && localModel.getValue() !== savedLocal;
-  const remoteDirty = !!remoteModel && remoteModel.getValue() !== savedRemote;
-  $('localDirty').textContent = localDirty ? '● modified' : '';
-  $('remoteDirty').textContent = remoteDirty ? '● modified — Ctrl+S to upload' : '';
+  if (!viewer || !current) return;
+  const next = { local: viewer.getOriginal() !== savedLocal, remote: viewer.getModified() !== savedRemote };
+  if (next.local === dirty.local && next.remote === dirty.remote) return;
+  dirty = next;
+  viewer.setOptions(titles());
 }
 
 function save(side: 'local' | 'remote'): void {
-  if (!current) return;
-  if (side === 'local' && localModel) {
-    const text = localModel.getValue();
+  if (!current || !viewer) return;
+  if (side === 'local') {
+    const text = viewer.getOriginal();
     if (text === savedLocal && current.local.exists) return;
     savedLocal = text;
     vscode.postMessage({ type: 'saveLocal', id: current.id, text });
-  } else if (side === 'remote' && remoteModel) {
-    const text = remoteModel.getValue();
+  } else {
+    const text = viewer.getModified();
     if (text === savedRemote && current.remote.exists) return;
     savedRemote = text;
     vscode.postMessage({ type: 'saveRemote', id: current.id, text });
@@ -607,15 +371,49 @@ function save(side: 'local' | 'remote'): void {
   updateDirty();
 }
 
+/** Ctrl+S: saves the focused side; the unified viewer has one editor for both, so it saves whatever changed. */
+const saveKey = Prec.highest(
+  keymap.of([
+    {
+      key: 'Mod-s',
+      run: (view: EditorView) => {
+        const impl = viewer?.getImplementation();
+        const editors = impl && 'getEditors' in impl ? impl.getEditors() : undefined;
+        if (editors) save(editors[0] === view ? 'local' : 'remote');
+        else {
+          if (dirty.local) save('local');
+          if (dirty.remote) save('remote');
+        }
+        return true;
+      },
+    },
+  ]),
+);
+
+// Gutter >> / << arrows: apply and save at once. The viewer applies synchronously in the click handler.
+$('diff').addEventListener(
+  'click',
+  (e) => {
+    if (!viewer || !(e.target as HTMLElement).closest('.idd-gutter-op')) return;
+    const before = [viewer.getOriginal(), viewer.getModified()];
+    window.setTimeout(() => {
+      if (viewer?.getOriginal() !== before[0]) save('local');
+      if (viewer?.getModified() !== before[1]) save('remote');
+    });
+  },
+  true,
+);
+
 /** Before switching files: local edits are saved (autosave), remote edits need confirmation. */
 function flushEdits(): void {
-  if (!current) return;
-  if (localModel && localModel.getValue() !== savedLocal) {
+  if (!current || !viewer) return;
+  if (viewer.getOriginal() !== savedLocal) {
     save('local');
   }
-  if (remoteModel && remoteModel.getValue() !== savedRemote) {
-    vscode.postMessage({ type: 'confirmRemote', id: current.id, text: remoteModel.getValue() });
-    savedRemote = remoteModel.getValue();
+  const remote = viewer.getModified();
+  if (remote !== savedRemote) {
+    vscode.postMessage({ type: 'confirmRemote', id: current.id, text: remote });
+    savedRemote = remote;
   }
 }
 
@@ -628,53 +426,75 @@ function requestDiff(id: number): void {
   vscode.postMessage({ type: 'select', id });
 }
 
+function toolButton(id: string, icon: IconName, title: string, onClick: () => void): HTMLButtonElement {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'idd-btn';
+  button.id = id;
+  button.title = title;
+  button.setAttribute('aria-label', title);
+  const i = document.createElement('span');
+  i.className = 'idd-icon';
+  i.dataset.icon = icon;
+  i.innerHTML = getIcon(icon, theme());
+  button.appendChild(i);
+  button.addEventListener('mousedown', (e) => e.preventDefault());
+  button.addEventListener('click', () => !button.disabled && onClick());
+  return button;
+}
+
+/** Adds Edit Source and previous/next file after the viewer's previous/next difference buttons. */
+function addToolbarButtons(): void {
+  const next = $('diff').querySelector('.idd-toolbar-left')?.children[1];
+  if (!next || document.getElementById('editSource')) return;
+  const sep = (): HTMLElement => Object.assign(document.createElement('span'), { className: 'idd-sep' });
+  next.after(
+    sep(),
+    toolButton('editSource', 'generalEdit', 'Edit Source (F4)', () => diffId >= 0 && vscode.postMessage({ type: 'open', id: diffId })),
+    sep(),
+    toolButton('prevFile', 'generalLeft', 'Compare Previous File', () => moveFile(-1)),
+    toolButton('nextFile', 'generalRight', 'Compare Next File', () => moveFile(1)),
+  );
+  updateDiffNav();
+}
+
+function revealFirstChange(): void {
+  const impl = viewer?.getImplementation();
+  const first = viewer?.getChanges()[0];
+  if (!impl || !first || !('getEditors' in impl)) return;
+  const ed = impl.getEditors()[1];
+  const pos = ed.state.doc.line(Math.min(first.startLine2 + 1, ed.state.doc.lines)).from;
+  ed.dispatch({ effects: EditorView.scrollIntoView(pos, { y: 'center' }) });
+}
+
 function showDiff(m: DiffMsg): void {
   if (m.id !== diffId) return;
   current = m;
-  $('localTitle').textContent = '‎' + (m.local.exists ? m.local.path : `${m.local.path} (does not exist)`) + '‎';
-  $('localTitle').title = m.local.path;
-  $('remoteTitle').textContent = '‎' + `${window.__DEPLOY__.server}:${m.remote.path}${m.remote.exists ? '' : ' (does not exist)'}` + '‎';
-  $('remoteTitle').title = m.remote.path;
   const message = m.tooLarge ? 'File is too large to compare here.' : m.binary ? (m.identicalBinary ? 'Binary files are identical.' : 'Binary files differ.') : '';
-  $('diffMessage').textContent = message;
-  $('diffMessage').hidden = !message;
-  $('diff').style.visibility = message ? 'hidden' : 'visible';
   if (message) {
-    updateCount();
+    showMessage(message);
     return;
   }
-  const ed = ensureEditor();
-  const oldLocal = localModel;
-  const oldRemote = remoteModel;
-  const lang = monaco.languages.getLanguages().some((l) => l.id === m.language) ? m.language : 'plaintext';
-  localModel = monaco.editor.createModel(m.local.text ?? '', lang);
-  remoteModel = monaco.editor.createModel(m.remote.text ?? '', lang);
+  $('diffMessage').hidden = true;
+  disposeViewer();
   savedLocal = m.local.text ?? '';
   savedRemote = m.remote.text ?? '';
-  ed.setModel({ original: localModel, modified: remoteModel });
-  oldLocal?.dispose();
-  oldRemote?.dispose();
-  setLocked(remoteLocked);
-  updateDirty();
-  updateDiffNav();
-  // Jump to the first change.
-  const once = ed.onDidUpdateDiff(() => {
-    once.dispose();
-    const first = lineChanges()[0];
-    if (first) {
-      ed.getModifiedEditor().revealLineInCenterIfOutsideViewport(Math.max(1, first.modifiedStartLineNumber));
-      ed.getOriginalEditor().revealLineInCenterIfOutsideViewport(Math.max(1, first.originalStartLineNumber));
-    }
+  dirty = { local: false, remote: false };
+  viewer = createDiffViewer($('diff'), {
+    ...settings,
+    ...titles(),
+    original: savedLocal,
+    modified: savedRemote,
+    language: languageFor(m.language),
+    theme: theme(),
+    readOnly: { original: false, modified: remoteLocked },
+    extensions: [saveKey],
   });
-}
-
-function setLocked(locked: boolean): void {
-  remoteLocked = locked;
-  diffEditor?.getModifiedEditor().updateOptions({ readOnly: locked, readOnlyMessage: { value: 'The deployed file is read-only. Click the lock icon to edit it.' } });
-  $('lock').innerHTML = `<i class="codicon codicon-${locked ? 'lock' : 'unlock'}"></i>`;
-  $('lock').title = locked ? 'Deployed file is read-only — click to allow editing' : 'Deployed file is editable — click to lock';
-  $('lock').classList.toggle('on', !locked);
-  updateGlyphs();
+  if (appearance) (viewer.getImplementation() as unknown as { setAppearance(a: Appearance): void }).setAppearance(appearance);
+  viewer.onDidUpdateDiff(updateDirty);
+  viewer.onDidChangeMode(addToolbarButtons);
+  addToolbarButtons();
+  revealFirstChange();
 }
 
 function moveFile(delta: number): void {
@@ -690,57 +510,12 @@ function moveFile(delta: number): void {
 
 function updateDiffNav(): void {
   const idx = view.findIndex((r) => r.id === diffId);
-  ($('prevFile') as HTMLButtonElement).disabled = idx <= 0;
-  ($('nextFile') as HTMLButtonElement).disabled = idx < 0 || idx >= view.length - 1;
+  const prev = document.getElementById('prevFile') as HTMLButtonElement | null;
+  const next = document.getElementById('nextFile') as HTMLButtonElement | null;
+  if (prev) prev.disabled = idx <= 0;
+  if (next) next.disabled = idx < 0 || idx >= view.length - 1;
 }
-
-function setToggle(id: string, on: boolean): void {
-  $(id).classList.toggle('on', on);
-}
-
-$('prevDiff').onclick = () => diffEditor?.goToDiff('previous');
-$('nextDiff').onclick = () => diffEditor?.goToDiff('next');
-$('editSource').onclick = () => diffId >= 0 && vscode.postMessage({ type: 'open', id: diffId });
-$('prevFile').onclick = () => moveFile(-1);
-$('nextFile').onclick = () => moveFile(1);
-$('lock').onclick = () => setLocked(!remoteLocked);
-$('collapse').onclick = () => {
-  collapse = !collapse;
-  persist({ collapse });
-  setToggle('collapse', collapse);
-  diffEditor?.updateOptions({ hideUnchangedRegions: { enabled: collapse } });
-};
-const setMode = (sbs: boolean): void => {
-  sideBySide = sbs;
-  persist({ sideBySide });
-  setToggle('sideBySide', sbs);
-  setToggle('unified', !sbs);
-  diffEditor?.updateOptions({ renderSideBySide: sbs });
-  document.body.classList.toggle('unified', !sbs);
-};
-$('sideBySide').onclick = () => setMode(true);
-$('unified').onclick = () => setMode(false);
-$('settings').onclick = (e) => {
-  e.stopPropagation();
-  $('settingsMenu').hidden = !$('settingsMenu').hidden;
-};
-document.addEventListener('click', (e) => {
-  if (!(e.target as HTMLElement).closest('#settingsMenu')) $('settingsMenu').hidden = true;
-});
-($('optIgnoreWs') as HTMLInputElement).checked = ignoreWs;
-($('optWrap') as HTMLInputElement).checked = wordWrap;
-$('optIgnoreWs').onchange = (e) => {
-  ignoreWs = (e.target as HTMLInputElement).checked;
-  persist({ ignoreWs });
-  diffEditor?.updateOptions({ ignoreTrimWhitespace: ignoreWs });
-};
-$('optWrap').onchange = (e) => {
-  wordWrap = (e.target as HTMLInputElement).checked;
-  persist({ wordWrap });
-  diffEditor?.updateOptions({ wordWrap: wordWrap ? 'on' : 'off', diffWordWrap: wordWrap ? 'on' : 'off' });
-};
-setToggle('collapse', collapse);
-setMode(sideBySide);
+window.addEventListener('beforeunload', saveSettings);
 
 // ------------------------------------------------------------------ messages
 
@@ -784,10 +559,7 @@ window.addEventListener('message', (ev) => {
         requestDiff(view[cursor].id);
       } else {
         current = undefined;
-        $('diffMessage').textContent = 'Select a file to compare.';
-        $('diffMessage').hidden = false;
-        $('diff').style.visibility = 'hidden';
-        updateCount();
+        showMessage('Select a file to compare.');
       }
       $('table').focus();
       break;

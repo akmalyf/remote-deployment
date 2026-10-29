@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.0
+
+- Sync with Deployed: the file diff is now [ide-diff](https://github.com/akmalyf/ide-diff), a JetBrains-style diff on CodeMirror 6 that replaces Monaco: IntelliJ's diff algorithms, curved divider, `«` / `»` gutter arrows, collapsed unchanged fragments, and a settings menu with ignore and highlighting policies, whitespaces, line numbers and soft wraps. Colors and fonts follow the VS Code theme.
+- The diff viewer's settings (viewer mode, policies, appearance) are kept between files and sessions.
+- Smaller package: the Monaco editor and its worker are gone.
+
 ## 1.0.0
 
 Initial release.
