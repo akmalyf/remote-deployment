@@ -9,9 +9,20 @@ import type { RemoteEntry } from '../transport/types';
 export const REMOTE_SCHEME = 'deploy-remote';
 export const SNAPSHOT_SCHEME = 'deploy-snapshot';
 
-/** deploy-remote://<server>/<abs path>?<project folder uri> */
+/**
+ * deploy-remote://<server slug>/<abs path>?server=<name>&project=<folder uri>
+ *
+ * The server name lives in the query: VS Code lower-cases the authority when a uri is
+ * serialized, and names with spaces or ":" are not valid authorities. The authority only
+ * keeps a readable slug for tooltips.
+ */
 export function remoteUri(project: Project, server: Server, remotePath: string): vscode.Uri {
-  return vscode.Uri.from({ scheme: REMOTE_SCHEME, authority: server.name, path: remotePath, query: project.folder.uri.toString() });
+  const query = new URLSearchParams({ server: server.name, project: project.folder.uri.toString() });
+  return vscode.Uri.from({ scheme: REMOTE_SCHEME, authority: serverSlug(server.name), path: remotePath, query: query.toString() });
+}
+
+function serverSlug(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9.-]+/g, '-').replace(/^-+|-+$/g, '') || 'server';
 }
 
 export interface RemoteRef {
@@ -21,8 +32,17 @@ export interface RemoteRef {
 }
 
 export function parseRemoteUri(projects: Projects, uri: vscode.Uri): RemoteRef | undefined {
-  const project = projects.all().find((p) => p.folder.uri.toString() === uri.query) ?? projects.all()[0];
-  const server = project?.server(uri.authority);
+  let serverName = uri.authority;
+  let folder = uri.query;
+  if (uri.query.includes('=')) {
+    const q = new URLSearchParams(uri.query);
+    serverName = q.get('server') ?? serverName;
+    folder = q.get('project') ?? folder;
+  }
+  const all = projects.all();
+  const project = all.find((p) => p.folder.uri.toString() === folder) ?? all.find((p) => p.server(serverName)) ?? all[0];
+  // Older uris carried the name in the authority, which VS Code lower-cases: fall back to a case-insensitive match.
+  const server = project?.server(serverName) ?? project?.config.servers.find((s) => s.name.toLowerCase() === serverName.toLowerCase());
   return project && server ? { project, server, path: uri.path || '/' } : undefined;
 }
 

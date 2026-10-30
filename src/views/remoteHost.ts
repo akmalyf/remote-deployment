@@ -6,7 +6,7 @@ import type { Project, Projects } from '../core/project';
 import type { Deployer } from '../core/transfer';
 import type { ConnectionPool } from '../transport/pool';
 import type { RemoteEntry } from '../transport/types';
-import { REMOTE_SCHEME, remoteUri } from './remoteFs';
+import { parseRemoteUri, REMOTE_SCHEME, remoteUri } from './remoteFs';
 
 export interface ServerNode {
   kind: 'server';
@@ -273,11 +273,11 @@ export class RemoteHostView implements vscode.TreeDataProvider<HostNode>, vscode
     if (uri.scheme !== REMOTE_SCHEME) {
       return undefined;
     }
-    const project = this.projects.all().find((p) => p.folder.uri.toString() === uri.query);
-    const server = project?.server(uri.authority);
-    if (!project || !server) {
+    const ref = parseRemoteUri(this.projects, uri);
+    if (!ref) {
       return undefined;
     }
+    const { project, server } = ref;
     if (project.excluder(server).isRemoteExcluded(project.root, uri.path)) {
       return { color: new vscode.ThemeColor('disabledForeground'), badge: 'E', tooltip: 'Excluded' };
     }
