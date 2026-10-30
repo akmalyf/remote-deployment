@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.1
+
+- Edit Remote File, Compare with Deployed Version and the Remote Host decorations failed with "Unknown deployment server" when the server name had upper-case letters, spaces or ":" (VS Code lower-cases the authority of a uri). The server name now travels in the uri query.
+
 ## 1.1.0
 
 - Sync with Deployed: the file diff is now [ide-diff](https://github.com/akmalyf/ide-diff), a JetBrains-style diff on CodeMirror 6 that replaces Monaco: IntelliJ's diff algorithms, curved divider, `«` / `»` gutter arrows, collapsed unchanged fragments, and a settings menu with ignore and highlighting policies, whitespaces, line numbers and soft wraps. Colors and fonts follow the VS Code theme.

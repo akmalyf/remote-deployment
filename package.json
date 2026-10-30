@@ -2,7 +2,7 @@
   "name": "remote-deployment",
   "displayName": "Remote Deployment",
   "description": "Deploy to SFTP, FTP, FTPS, WebDAV and local folders: remote host browser, upload/download, compare and sync with a built-in diff, automatic upload, remote editing and SSH terminal.",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "publisher": "akmalyf",
   "license": "MIT",
   "engines": {
